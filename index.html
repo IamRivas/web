@@ -95,19 +95,58 @@ const mensajeDiv = document.getElementById('mensaje');
 const archivoSubidoDiv = document.getElementById('archivoSubido');
 const tablaExcel = document.getElementById('tablaExcel');
 
-// Función para cargar datos del almacenamiento local
-function cargarDesdeLocalStorage() {
-    const archivoUrl = localStorage.getItem('ultimoArchivoUrl');
-    const tablaDatos = localStorage.getItem('ultimoArchivoTabla');
+// Función para obtener el archivo más reciente de GitHub
+async function obtenerArchivoMasReciente() {
+    const url = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/`;
 
-    if (archivoUrl && tablaDatos) {
-        archivoSubidoDiv.innerHTML = `<p>Archivo subido: <a href="${archivoUrl}" target="_blank">Ver Archivo</a></p>`;
-        tablaExcel.innerHTML = tablaDatos;
+    try {
+        const response = await fetch(url, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (response.ok) {
+            const archivos = await response.json();
+
+            // Ordenar archivos por fecha de subida (si está disponible)
+            const archivoMasReciente = archivos.sort((a, b) => new Date(b.commit.committer.date) - new Date(a.commit.committer.date))[0];
+
+            if (archivoMasReciente) {
+                const archivoUrl = archivoMasReciente.download_url;
+                archivoSubidoDiv.innerHTML = `<p>Archivo cargado: <a href="${archivoUrl}" target="_blank">Ver Archivo</a></p>`;
+                leerArchivoDesdeUrl(archivoUrl);
+            } else {
+                mensajeDiv.innerHTML = `<div class="error">No se encontraron archivos en el repositorio.</div>`;
+            }
+        } else {
+            const errorData = await response.json();
+            mensajeDiv.innerHTML = `<div class="error">Error: ${errorData.message}</div>`;
+        }
+    } catch (error) {
+        mensajeDiv.innerHTML = `<div class="error">Error al obtener el archivo: ${error.message}</div>`;
     }
 }
 
-// Cargar datos del almacenamiento local al iniciar
-cargarDesdeLocalStorage();
+// Función para leer y mostrar datos del archivo Excel desde una URL
+async function leerArchivoDesdeUrl(url) {
+    try {
+        const response = await fetch(url);
+        const arrayBuffer = await response.arrayBuffer();
+
+        const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+        // Mostrar datos en la tabla
+        tablaExcel.innerHTML = json.map((fila) => 
+            `<tr>${fila.map((celda) => `<td>${celda || ''}</td>`).join('')}</tr>`
+        ).join('');
+    } catch (error) {
+        mensajeDiv.innerHTML = `<div class="error">Error al leer el archivo: ${error.message}</div>`;
+    }
+}
 
 // Evento para subir un archivo
 async function subirArchivo() {
@@ -163,11 +202,8 @@ async function subirArchivo() {
             if (response.ok) {
                 mensajeDiv.innerHTML = `<div class="success">Archivo subido con éxito a GitHub.</div>`;
 
-                // Guardar URL del archivo subido y datos de la tabla en localStorage
-                const archivoUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${nuevoNombreArchivo}`;
-                archivoSubidoDiv.innerHTML = `<p>Archivo subido: <a href="${archivoUrl}" target="_blank">Ver Archivo</a></p>`;
-                localStorage.setItem('ultimoArchivoUrl', archivoUrl);
-                localStorage.setItem('ultimoArchivoTabla', tablaHtml);
+                // Actualizar archivo mostrado
+                obtenerArchivoMasReciente();
             } else {
                 const errorData = await response.json();
                 mensajeDiv.innerHTML = `<div class="error">Error: ${errorData.message}</div>`;
@@ -179,6 +215,9 @@ async function subirArchivo() {
 
     reader.readAsArrayBuffer(archivo);
 }
+
+// Cargar el archivo más reciente al iniciar
+obtenerArchivoMasReciente();
 
 document.getElementById('subirBtn').addEventListener('click', subirArchivo);
 </script>
