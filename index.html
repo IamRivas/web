@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subir Archivo Excel a GitHub y Mostrar Tabla</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f9;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        input[type="file"], button {
+            width: 100%;
+            margin-top: 10px;
+        }
+        button {
+            padding: 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .success, .error {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        table {
+            margin-top: 20px;
+            width: 100%;
+            border-collapse: collapse;
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+        }
+        th {
+            background-color: #007bff;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Subir Archivo Excel a GitHub y Mostrar Contenido</h1>
+        <input type="file" id="archivo" accept=".xls, .xlsx">
+        <button id="subirBtn">Subir Archivo</button>
+        <div id="mensaje"></div>
+        <div id="archivoSubido"></div>
+        <table id="tablaExcel"></table>
+    </div>
+
+    <!-- Incluye la librería XLSX.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<script>
+const repoOwner = "IamRivas"; // Cambia por tu usuario o la organización de GitHub
+const repoName = "fjaphlshgownj";    // Cambia por tu repositorio
+const branch = "main";         // Cambia por la rama que usarás
+const token = "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";      // Inserta tu token de acceso personal de GitHub
+
+// Referencias a elementos HTML
+const archivoInput = document.getElementById('archivo');
+const mensajeDiv = document.getElementById('mensaje');
+const archivoSubidoDiv = document.getElementById('archivoSubido');
+const tablaExcel = document.getElementById('tablaExcel');
+
+// Función para cargar datos del almacenamiento local
+function cargarDesdeLocalStorage() {
+    const archivoUrl = localStorage.getItem('ultimoArchivoUrl');
+    const tablaDatos = localStorage.getItem('ultimoArchivoTabla');
+
+    if (archivoUrl && tablaDatos) {
+        archivoSubidoDiv.innerHTML = `<p>Archivo subido: <a href="${archivoUrl}" target="_blank">Ver Archivo</a></p>`;
+        tablaExcel.innerHTML = tablaDatos;
+    }
+}
+
+// Cargar datos del almacenamiento local al iniciar
+cargarDesdeLocalStorage();
+
+// Evento para subir un archivo
+async function subirArchivo() {
+    if (!archivoInput.files.length) {
+        mensajeDiv.innerHTML = `<div class="error">Por favor, selecciona un archivo.</div>`;
+        return;
+    }
+
+    const archivo = archivoInput.files[0];
+    const extension = archivo.name.split('.').pop().toLowerCase();
+
+    if (extension !== 'xls' && extension !== 'xlsx') {
+        mensajeDiv.innerHTML = `<div class="error">Sólo se permiten archivos Excel (.xls, .xlsx).</div>`;
+        return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = async () => {
+        const data = new Uint8Array(reader.result);
+        const contenidoBase64 = btoa(reader.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+        // Mostrar datos en la tabla
+        const tablaHtml = json.map((fila) => 
+            `<tr>${fila.map((celda) => `<td>${celda || ''}</td>`).join('')}</tr>`
+        ).join('');
+        tablaExcel.innerHTML = tablaHtml;
+
+        // Renombrar archivo y subirlo a GitHub
+        const fecha = new Date();
+        const nuevoNombreArchivo = `${archivo.name.split('.')[0]}-${fecha.toISOString().replace(/[:.]/g, '-')}.${extension}`;
+        const url = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${nuevoNombreArchivo}`;
+        const commitMessage = `Subida automática: ${nuevoNombreArchivo}`;
+
+        try {
+            const response = await fetch(url, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    message: commitMessage,
+                    content: contenidoBase64,
+                    branch: branch
+                })
+            });
+
+            if (response.ok) {
+                mensajeDiv.innerHTML = `<div class="success">Archivo subido con éxito a GitHub.</div>`;
+
+                // Guardar URL del archivo subido y datos de la tabla en localStorage
+                const archivoUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${nuevoNombreArchivo}`;
+                archivoSubidoDiv.innerHTML = `<p>Archivo subido: <a href="${archivoUrl}" target="_blank">Ver Archivo</a></p>`;
+                localStorage.setItem('ultimoArchivoUrl', archivoUrl);
+                localStorage.setItem('ultimoArchivoTabla', tablaHtml);
+            } else {
+                const errorData = await response.json();
+                mensajeDiv.innerHTML = `<div class="error">Error: ${errorData.message}</div>`;
+            }
+        } catch (error) {
+            mensajeDiv.innerHTML = `<div class="error">Error al subir el archivo: ${error.message}</div>`;
+        }
+    };
+
+    reader.readAsArrayBuffer(archivo);
+}
+
+document.getElementById('subirBtn').addEventListener('click', subirArchivo);
+</script>
+
+</body>
+</html>
